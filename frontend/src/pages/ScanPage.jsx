@@ -1,70 +1,124 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import NumberInput from '../components/NumberInput'
 import SectionCard from '../components/SectionCard'
 import HeatmapChart from '../components/HeatmapChart'
 import SelectedPointPanel from '../components/SelectedPointPanel'
+import ErrorMessage from '../components/ErrorMessage'
+import Loading from '../components/Loading'
+import { scanSystem } from '../services/api'
+import { buildHeatmapData, findCell } from '../utils/heatmap'
+
+const defaultConfig = {
+  KaMin: 20,
+  KaMax: 120,
+  KaStep: 20,
+  K1Min: 0,
+  K1Max: 0.1,
+  K1Step: 0.02,
+  tEnd: 1,
+  dt: 0.01,
+  weights: {
+    settlingTime: 0.4,
+    overshoot: 0.4,
+    disturbancePeak: 0.2,
+  },
+}
+
+const metricTabs = [
+  { key: 'overshoot', label: '超调量热图' },
+  { key: 'settlingTime', label: '调节时间热图' },
+  { key: 'riseTime', label: '上升时间热图' },
+  { key: 'disturbancePeak', label: '扰动峰值热图' },
+  { key: 'disturbanceSettlingTime', label: '扰动调节时间热图' },
+  { key: 'score', label: '综合评分热图' },
+]
 
 export default function ScanPage() {
-  const [config, setConfig] = useState({
-    KaMin: 20,
-    KaMax: 120,
-    KaStep: 20,
-    K1Min: 0,
-    K1Max: 0.1,
-    K1Step: 0.02,
-    tEnd: 1,
-    dt: 0.01,
-  })
-
+  const [config, setConfig] = useState(defaultConfig)
+  const [scanResult, setScanResult] = useState(null)
   const [selectedPoint, setSelectedPoint] = useState(null)
-
-  const xLabels = [20, 40, 60, 80, 100, 120]
-  const yLabels = [0, 0.02, 0.04, 0.06, 0.08, 0.1]
-
-  const heatmapData = [
-    [0, 0, 15],
-    [1, 0, 12],
-    [2, 0, 10],
-    [3, 0, 9],
-    [4, 0, 8],
-    [5, 0, 7],
-    [0, 1, 10],
-    [1, 1, 8],
-    [2, 1, 6],
-    [3, 1, 5],
-    [4, 1, 4],
-    [5, 1, 4],
-    [0, 2, 7],
-    [1, 2, 6],
-    [2, 2, 5],
-    [3, 2, 4],
-    [4, 2, 3],
-    [5, 2, 3],
-  ]
-
-  const mockCells = [
-    { Ka: 100, K1: 0.04, riseTime: 0.13, settlingTime: 0.26, overshoot: 3.0, disturbancePeak: 0.0021, disturbanceSettlingTime: 0.20, score: 0.22 },
-    { Ka: 120, K1: 0.04, riseTime: 0.11, settlingTime: 0.24, overshoot: 3.2, disturbancePeak: 0.0019, disturbanceSettlingTime: 0.18, score: 0.20 },
-  ]
+  const [activeMetric, setActiveMetric] = useState('overshoot')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   const handleChange = (key, value) => {
     setConfig((prev) => ({ ...prev, [key]: value }))
   }
 
-  const handleScan = () => {
-    console.log('开始扫描：', config)
+  const handleWeightChange = (key, value) => {
+    setConfig((prev) => ({
+      ...prev,
+      weights: {
+        ...prev.weights,
+        [key]: value,
+      },
+    }))
   }
 
+  const validateConfig = () => {
+    if (config.KaMin <= 0 || config.KaMax <= 0) return 'Ka 范围必须大于 0'
+    if (config.KaMin > config.KaMax) return 'Ka 最小值不能大于最大值'
+    if (config.KaStep <= 0) return 'Ka 步长必须大于 0'
+
+    if (config.K1Min < 0 || config.K1Max < 0) return 'K1 不能小于 0'
+    if (config.K1Min > config.K1Max) return 'K1 最小值不能大于最大值'
+    if (config.K1Step <= 0) return 'K1 步长必须大于 0'
+
+    if (config.tEnd <= 0) return '仿真时长必须大于 0'
+    if (config.dt <= 0) return '时间步长必须大于 0'
+    if (config.dt >= config.tEnd) return '时间步长 dt 必须小于仿真时长 tEnd'
+
+    return ''
+  }
+
+  const handleScan = async () => {
+    const validationError = validateConfig()
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setSelectedPoint(null)
+
+    try {
+      const data = await scanSystem(config)
+      setScanResult(data)
+      if (data?.bestPoint) {
+        setSelectedPoint(data.bestPoint)
+      }
+    } catch (err) {
+      console.error('scan failed:', err)
+      const message =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '参数扫描失败，请检查后端服务'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const heatmapData = useMemo(() => {
+    if (!scanResult) return []
+    return buildHeatmapData(
+      scanResult.cells,
+      scanResult.kaValues,
+      scanResult.k1Values,
+      activeMetric
+    )
+  }, [scanResult, activeMetric])
+
   const handlePointClick = (params) => {
+    if (!scanResult) return
+
     const [xIndex, yIndex] = params.data
-    const Ka = xLabels[xIndex]
-    const K1 = yLabels[yIndex]
+    const Ka = scanResult.kaValues[xIndex]
+    const K1 = scanResult.k1Values[yIndex]
 
-    const found =
-      mockCells.find((item) => item.Ka === Ka && item.K1 === K1) ||
-      { Ka, K1, riseTime: '--', settlingTime: '--', overshoot: params.data[2], disturbancePeak: '--', disturbanceSettlingTime: '--', score: '--' }
-
-    setSelectedPoint(found)
+    const cell = findCell(scanResult.cells, Ka, K1)
+    setSelectedPoint(cell || null)
   }
 
   return (
@@ -75,24 +129,72 @@ export default function ScanPage() {
             <NumberInput label="Ka 最小值" value={config.KaMin} onChange={(v) => handleChange('KaMin', v)} />
             <NumberInput label="Ka 最大值" value={config.KaMax} onChange={(v) => handleChange('KaMax', v)} />
             <NumberInput label="Ka 步长" value={config.KaStep} onChange={(v) => handleChange('KaStep', v)} />
+
             <NumberInput label="K1 最小值" value={config.K1Min} onChange={(v) => handleChange('K1Min', v)} step="0.01" />
             <NumberInput label="K1 最大值" value={config.K1Max} onChange={(v) => handleChange('K1Max', v)} step="0.01" />
             <NumberInput label="K1 步长" value={config.K1Step} onChange={(v) => handleChange('K1Step', v)} step="0.01" />
+
+            <NumberInput label="仿真时长 tEnd" value={config.tEnd} onChange={(v) => handleChange('tEnd', v)} step="0.1" />
+            <NumberInput label="时间步长 dt" value={config.dt} onChange={(v) => handleChange('dt', v)} step="0.001" />
           </div>
 
-          <div className="button-row">
-            <button onClick={handleScan}>开始扫描</button>
+          <div className="section-divider" />
+
+          <div className="form-grid">
+            <NumberInput
+              label="调节时间权重"
+              value={config.weights.settlingTime}
+              onChange={(v) => handleWeightChange('settlingTime', v)}
+              step="0.1"
+            />
+            <NumberInput
+              label="超调量权重"
+              value={config.weights.overshoot}
+              onChange={(v) => handleWeightChange('overshoot', v)}
+              step="0.1"
+            />
+            <NumberInput
+              label="扰动峰值权重"
+              value={config.weights.disturbancePeak}
+              onChange={(v) => handleWeightChange('disturbancePeak', v)}
+              step="0.1"
+            />
           </div>
+
+          <div className="button-row button-row-inline">
+            <button onClick={handleScan} disabled={loading}>
+              {loading ? '扫描中...' : '开始扫描'}
+            </button>
+          </div>
+
+          <ErrorMessage message={error} />
         </SectionCard>
 
         <SelectedPointPanel point={selectedPoint} />
       </div>
 
       <div className="right-panel">
+        {loading ? <Loading text="正在进行参数扫描，请稍候..." /> : null}
+
+        <SectionCard title="指标切换">
+          <div className="tab-row">
+            {metricTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={activeMetric === tab.key ? 'tab-button active' : 'tab-button'}
+                onClick={() => setActiveMetric(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </SectionCard>
+
         <HeatmapChart
-          title="超调量热图"
-          xLabels={xLabels}
-          yLabels={yLabels}
+          title={metricTabs.find((tab) => tab.key === activeMetric)?.label || '热图'}
+          xLabels={scanResult?.kaValues || []}
+          yLabels={scanResult?.k1Values || []}
           data={heatmapData}
           onPointClick={handlePointClick}
         />

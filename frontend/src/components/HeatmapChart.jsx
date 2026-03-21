@@ -8,12 +8,26 @@ export default function HeatmapChart({
   data = [],
   onPointClick,
 }) {
+  const validValues = data
+    .map((item) => item[2])
+    .filter((v) => typeof v === 'number' && !Number.isNaN(v))
+
+  const minValue = validValues.length ? Math.min(...validValues) : 0
+  const maxValue = validValues.length ? Math.max(...validValues) : 1
+
   const option = {
     tooltip: {
       position: 'top',
       formatter: (params) => {
         const [xIndex, yIndex, value] = params.data
-        return `Ka: ${xLabels[xIndex]}<br/>K1: ${yLabels[yIndex]}<br/>值: ${value}`
+        const ka = xLabels[xIndex]
+        const k1 = yLabels[yIndex]
+
+        if (value === null || value === undefined || value === '-') {
+          return `Ka: ${ka}<br/>K1: ${k1}<br/>无稳定结果`
+        }
+
+        return `Ka: ${ka}<br/>K1: ${k1}<br/>值: ${value}`
       },
     },
     grid: {
@@ -33,8 +47,8 @@ export default function HeatmapChart({
       splitArea: { show: true },
     },
     visualMap: {
-      min: Math.min(...data.map(item => item[2])),
-      max: Math.max(...data.map(item => item[2])),
+      min: minValue,
+      max: maxValue,
       calculable: true,
       orient: 'horizontal',
       left: 'center',
