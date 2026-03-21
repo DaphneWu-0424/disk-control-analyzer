@@ -184,3 +184,17 @@
       grid-template-columns: repeat(2, 1fr);
     }
   }
+
+  .button-row-inline {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  
+  .secondary-button {
+    background: #6b7280;
+  }
+  
+  .secondary-button:hover {
+    opacity: 0.92;
+  }

@@ -5,7 +5,15 @@ const api = axios.create({
   timeout: 20000,
 })
 
-export const simulateSystem = (payload) => api.post('/simulate', payload)
-export const scanSystem = (payload) => api.post('/scan', payload)
+export const simulateSystem = async (payload) => {
+    const res = await api.post('/simulate', payload)
+    return res.data
+}
+
+export const scanSystem = async (payload) => {
+    const res = await api.post('/scan', payload)
+    return res.data
+  }
+  
 
 export default api
