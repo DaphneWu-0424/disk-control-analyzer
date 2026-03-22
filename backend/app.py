@@ -5,18 +5,22 @@ from schemas.simulate_schemas import SimulateRequest, SimulateResponse
 from services.simulator import simulate_case
 from schemas.scan_schema import ScanRequest, ScanResponse
 from services.scanner import scan_cases
+import os
 
 app = FastAPI(
     # 初始化FastAPI实例，设置API标题和版本
     title="Disk Control Analyzer API",
-    version="0.1.0",
+    version="0.2.0",
 )
+
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5174")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        frontend_origin,
     ],
     allow_credentials=True,
     allow_methods=["*"],
