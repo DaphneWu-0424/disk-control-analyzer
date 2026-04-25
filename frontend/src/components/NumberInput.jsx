@@ -5,6 +5,7 @@ export default function NumberInput({
     step = 'any',
     min,
     max,
+    disabled = false,
   }) {
     return (
       <label className="form-field">
@@ -15,6 +16,7 @@ export default function NumberInput({
           step={step}
           min={min}
           max={max}
+          disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
         />
       </label>

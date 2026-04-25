@@ -28,7 +28,18 @@ import ErrorMessage from '../components/ErrorMessage'
 import Loading from '../components/Loading'
 import { simulateSystem } from '../services/api'
 
+const MODEL_TYPES = {
+  POSITION_ONLY: 'positionOnly',
+  POSITION_VELOCITY: 'positionVelocity',
+}
+
+const modelOptions = [
+  { key: MODEL_TYPES.POSITION_ONLY, label: '仅位置反馈（例3-19）' },
+  { key: MODEL_TYPES.POSITION_VELOCITY, label: '位置+速度反馈（例3-20）' },
+]
+
 const defaultParams = {
+  modelType: MODEL_TYPES.POSITION_VELOCITY,
   Ka: 100,
   K1: 0.05,
   tEnd: 1,
@@ -74,6 +85,9 @@ export default function SingleDesignPage() {
   const [result, setResult] = useState(emptyResult)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const selectedModelLabel =
+    modelOptions.find((item) => item.key === params.modelType)?.label || '当前模型'
+  const isPositionOnly = params.modelType === MODEL_TYPES.POSITION_ONLY
 
   const handleChange = (key, value) => {
     setParams((prev) => ({
@@ -84,7 +98,7 @@ export default function SingleDesignPage() {
 
   const validateParams = () => {
     if (params.Ka <= 0) return 'Ka 必须大于 0'
-    if (params.K1 < 0) return 'K1 不能小于 0'
+    if (!isPositionOnly && params.K1 < 0) return 'K1 不能小于 0'
     if (params.tEnd <= 0) return '仿真时长 tEnd 必须大于 0'
     if (params.dt <= 0) return '时间步长 dt 必须大于 0'
     if (params.dt >= params.tEnd) return '时间步长 dt 必须小于仿真时长 tEnd'
@@ -103,8 +117,9 @@ export default function SingleDesignPage() {
 
     try {
       const data = await simulateSystem({
+        // 显式区分两套模型：仅位置反馈时固定 K1=0。
         Ka: params.Ka,
-        K1: params.K1,
+        K1: isPositionOnly ? 0 : params.K1,
         tEnd: params.tEnd,
         dt: params.dt,
       })
@@ -134,6 +149,22 @@ export default function SingleDesignPage() {
     <div className="page-grid single-page">
       <div className="left-panel">
         <SectionCard title="单参数设计">
+          <div className="tab-row">
+            {modelOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={params.modelType === option.key ? 'tab-button active' : 'tab-button'}
+                onClick={() => handleChange('modelType', option.key)}
+                disabled={loading}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mode-hint">当前模型：{selectedModelLabel}</div>
+
           <div className="form-grid">
             <NumberInput
               label="Ka"
@@ -141,10 +172,11 @@ export default function SingleDesignPage() {
               onChange={(v) => handleChange('Ka', v)}
             />
             <NumberInput
-              label="K1"
+              label={isPositionOnly ? 'K1（仅位置反馈时固定为 0）' : 'K1'}
               value={params.K1}
               onChange={(v) => handleChange('K1', v)}
               step="0.01"
+              disabled={isPositionOnly}
             />
             <NumberInput
               label="仿真时长 tEnd"
@@ -183,18 +215,18 @@ export default function SingleDesignPage() {
         {loading ? <Loading text="正在请求后端并计算响应..." /> : null}
 
         <LineChartCard
-          title="单位阶跃输入响应"
+          title={`${selectedModelLabel} - 单位阶跃输入响应`}
           xData={result.inputResponse.time}
           yData={result.inputResponse.output}
         />
 
         <LineChartCard
-          title="单位阶跃扰动响应"
+          title={`${selectedModelLabel} - 单位阶跃扰动响应`}
           xData={result.disturbanceResponse.time}
           yData={result.disturbanceResponse.output}
         />
 
-        <MetricsPanel metrics={result.metrics} />
+        <MetricsPanel metrics={result.metrics} title={`${selectedModelLabel} - 时域指标`} />
       </div>
     </div>
   )

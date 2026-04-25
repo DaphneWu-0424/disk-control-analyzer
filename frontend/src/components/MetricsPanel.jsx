@@ -10,9 +10,9 @@ const metricItems = [
   { key: 'disturbanceSettlingTime', label: '扰动调节时间' },
 ]
 
-export default function MetricsPanel({ metrics = {} }) {
+export default function MetricsPanel({ metrics = {}, title = '时域指标' }) {
   return (
-    <SectionCard title="时域指标">
+    <SectionCard title={title}>
       <div className="metrics-grid">
         {metricItems.map((item) => (
           <div key={item.key} className="metric-card">
