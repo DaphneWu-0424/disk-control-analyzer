@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -38,8 +38,13 @@ class ScanCell(BaseModel):
     score: Optional[float] = None
 
 
+class ScanModelResult(BaseModel):
+    modelType: Literal["positionOnly", "positionVelocity"]
+    cells: List[ScanCell]
+    bestPoint: Optional[ScanCell] = None
+
+
 class ScanResponse(BaseModel):
     kaValues: List[float]
     k1Values: List[float]
-    cells: List[ScanCell]
-    bestPoint: Optional[ScanCell] = None
+    comparison: Dict[Literal["positionOnly", "positionVelocity"], ScanModelResult]

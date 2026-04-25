@@ -41,7 +41,7 @@ def build_position_velocity_systems(Ka: float, K1: float):
     return sys_input, sys_disturbance
 
 
-def build_systems(Ka: float, K1: float, model_type: str):
+def build_systems(Ka: float, K1: float, model_type: str = "positionVelocity"):
     if model_type == "positionOnly":
         return build_position_only_systems(Ka)
     if model_type == "positionVelocity":

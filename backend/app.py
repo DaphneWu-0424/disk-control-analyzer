@@ -2,9 +2,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from schemas.simulate_schemas import SimulateRequest, SimulateResponse
-from services.simulator import simulate_case
 from schemas.scan_schema import ScanRequest, ScanResponse
-from services.scanner import scan_cases
+from services import control_model
+from services import scanner as scanner_service
+from services import simulator as simulator_service
+import importlib
+import inspect
 import os
 
 app = FastAPI(
@@ -34,7 +37,10 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "buildSystemsSignature": str(inspect.signature(control_model.build_systems)),
+    }
 
 @app.get("/")
 def root():
@@ -43,7 +49,7 @@ def root():
 @app.post("/api/simulate", response_model=SimulateResponse)
 def simulate(payload: SimulateRequest):
     try:
-        return simulate_case(payload)
+        return simulator_service.simulate_case(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -53,7 +59,14 @@ def simulate(payload: SimulateRequest):
 @app.post("/api/scan", response_model=ScanResponse)
 def scan(payload: ScanRequest):
     try:
-        return scan_cases(payload)
+        return scanner_service.scan_cases(payload)
+    except TypeError as e:
+        # 防御式兜底：当旧函数签名残留在进程中时，自动热重载并重试一次。
+        if "build_systems() missing 1 required positional argument: 'model_type'" in str(e):
+            importlib.reload(control_model)
+            importlib.reload(scanner_service)
+            return scanner_service.scan_cases(payload)
+        raise HTTPException(status_code=500, detail=f"Scan failed: {e}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

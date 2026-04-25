@@ -5,9 +5,9 @@ function displayValue(value) {
   return value
 }
 
-export default function SelectedPointPanel({ point }) {
+export default function SelectedPointPanel({ point, title = '当前选中参数点' }) {
   return (
-    <SectionCard title="当前选中参数点">
+    <SectionCard title={title}>
       {!point ? (
         <div>点击热图中的点查看详情</div>
       ) : (

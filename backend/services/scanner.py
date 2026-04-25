@@ -27,20 +27,13 @@ def _normalize(values):
     return (arr - vmin) / (vmax - vmin)
 
 
-def scan_cases(payload):
-    if payload.dt >= payload.tEnd:
-        raise ValueError("dt must be smaller than tEnd")
-
-    ka_values = _build_axis(payload.KaMin, payload.KaMax, payload.KaStep)
-    k1_values = _build_axis(payload.K1Min, payload.K1Max, payload.K1Step)
-
-    t = np.arange(0, payload.tEnd + payload.dt, payload.dt)
-
+def _scan_single_model(ka_values, k1_values, t, weights, model_type: str):
     cells = []
 
     for k1 in k1_values:
         for ka in ka_values:
-            sys_input, sys_disturbance = build_systems(ka, k1)
+            effective_k1 = 0.0 if model_type == "positionOnly" else k1
+            sys_input, sys_disturbance = build_systems(ka, effective_k1, model_type)
 
             poles = ct.poles(sys_input)
             stable = bool(np.all(np.real(poles) < 0))
@@ -82,9 +75,9 @@ def scan_cases(payload):
         overshoot_norm = _normalize(overshoot_list)
         disturbance_peak_norm = _normalize(disturbance_peak_list)
 
-        w1 = payload.weights.settlingTime
-        w2 = payload.weights.overshoot
-        w3 = payload.weights.disturbancePeak
+        w1 = weights.settlingTime
+        w2 = weights.overshoot
+        w3 = weights.disturbancePeak
         weight_sum = w1 + w2 + w3 if (w1 + w2 + w3) > 0 else 1.0
 
         for i, cell in enumerate(stable_cells):
@@ -100,8 +93,29 @@ def scan_cases(payload):
         best_point = None
 
     return {
-        "kaValues": ka_values,
-        "k1Values": k1_values,
+        "modelType": model_type,
         "cells": cells,
         "bestPoint": best_point,
+    }
+
+
+def scan_cases(payload):
+    if payload.dt >= payload.tEnd:
+        raise ValueError("dt must be smaller than tEnd")
+
+    ka_values = _build_axis(payload.KaMin, payload.KaMax, payload.KaStep)
+    k1_values = _build_axis(payload.K1Min, payload.K1Max, payload.K1Step)
+    t = np.arange(0, payload.tEnd + payload.dt, payload.dt)
+
+    return {
+        "kaValues": ka_values,
+        "k1Values": k1_values,
+        "comparison": {
+            "positionOnly": _scan_single_model(
+                ka_values, k1_values, t, payload.weights, "positionOnly"
+            ),
+            "positionVelocity": _scan_single_model(
+                ka_values, k1_values, t, payload.weights, "positionVelocity"
+            ),
+        },
     }

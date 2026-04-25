@@ -51,12 +51,12 @@ npm run dev
 ### 2. start backend
 ```shell
 cd backend
-uvicorn app:app --reload --port 8000
+uvicorn app:app --reload --port 8001
 ```
 
 ---
 ## Notes
 - Make sure the frontend and backend are both running before using the demo.
 - The frontend port in this project is 5174, if If Vite starts on a different port, please update the corresponding setting in `backend/app.py`.
-- The backend default port in this project is 8000.
+- The backend default port in this project is 8001.
 - If you change the backend port or API path, remember to update the frontend request configuration as well.

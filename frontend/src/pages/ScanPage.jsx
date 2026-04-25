@@ -36,7 +36,12 @@ const metricTabs = [
 export default function ScanPage() {
   const [config, setConfig] = useState(defaultConfig)
   const [scanResult, setScanResult] = useState(null)
-  const [selectedPoint, setSelectedPoint] = useState(null)
+  const [selectedPoint, setSelectedPoint] = useState({
+    Ka: null,
+    K1: null,
+    positionOnly: null,
+    positionVelocity: null,
+  })
   const [activeMetric, setActiveMetric] = useState('overshoot')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -80,13 +85,23 @@ export default function ScanPage() {
 
     setLoading(true)
     setError('')
-    setSelectedPoint(null)
+    setSelectedPoint({
+      Ka: null,
+      K1: null,
+      positionOnly: null,
+      positionVelocity: null,
+    })
 
     try {
       const data = await scanSystem(config)
       setScanResult(data)
-      if (data?.bestPoint) {
-        setSelectedPoint(data.bestPoint)
+
+      const preferredPoint =
+        data?.comparison?.positionVelocity?.bestPoint ||
+        data?.comparison?.positionOnly?.bestPoint
+
+      if (preferredPoint) {
+        syncSelectedPoint(data, preferredPoint.Ka, preferredPoint.K1)
       }
     } catch (err) {
       console.error('scan failed:', err)
@@ -100,25 +115,47 @@ export default function ScanPage() {
     }
   }
 
-  const heatmapData = useMemo(() => {
+  const positionOnlyHeatmapData = useMemo(() => {
     if (!scanResult) return []
     return buildHeatmapData(
-      scanResult.cells,
+      scanResult?.comparison?.positionOnly?.cells || [],
       scanResult.kaValues,
       scanResult.k1Values,
       activeMetric
     )
   }, [scanResult, activeMetric])
 
+  const positionVelocityHeatmapData = useMemo(() => {
+    if (!scanResult) return []
+    return buildHeatmapData(
+      scanResult?.comparison?.positionVelocity?.cells || [],
+      scanResult.kaValues,
+      scanResult.k1Values,
+      activeMetric
+    )
+  }, [scanResult, activeMetric])
+
+  const syncSelectedPoint = (data, Ka, K1) => {
+    const positionOnly = findCell(data?.comparison?.positionOnly?.cells || [], Ka, K1)
+    const positionVelocity = findCell(data?.comparison?.positionVelocity?.cells || [], Ka, K1)
+
+    setSelectedPoint({
+      Ka,
+      K1,
+      positionOnly: positionOnly || null,
+      positionVelocity: positionVelocity || null,
+    })
+  }
+
   const handlePointClick = (params) => {
-    if (!scanResult) return
+    if (!scanResult || !params?.data) return
 
     const [xIndex, yIndex] = params.data
-    const Ka = scanResult.kaValues[xIndex]
-    const K1 = scanResult.k1Values[yIndex]
+    const Ka = scanResult?.kaValues?.[xIndex]
+    const K1 = scanResult?.k1Values?.[yIndex]
+    if (Ka === undefined || K1 === undefined) return
 
-    const cell = findCell(scanResult.cells, Ka, K1)
-    setSelectedPoint(cell || null)
+    syncSelectedPoint(scanResult, Ka, K1)
   }
 
   return (
@@ -170,7 +207,25 @@ export default function ScanPage() {
           <ErrorMessage message={error} />
         </SectionCard>
 
-        <SelectedPointPanel point={selectedPoint} />
+        <SectionCard title="当前选中参数">
+          {selectedPoint.Ka === null ? (
+            <div>点击热图中的点查看两种模型在同一参数点下的对比结果</div>
+          ) : (
+            <div>
+              <p><strong>Ka：</strong>{selectedPoint.Ka}</p>
+              <p><strong>K1：</strong>{selectedPoint.K1}</p>
+            </div>
+          )}
+        </SectionCard>
+
+        <SelectedPointPanel
+          title="仅位置反馈（例3-19）"
+          point={selectedPoint.positionOnly}
+        />
+        <SelectedPointPanel
+          title="位置+速度反馈（例3-20）"
+          point={selectedPoint.positionVelocity}
+        />
       </div>
 
       <div className="right-panel">
@@ -191,13 +246,22 @@ export default function ScanPage() {
           </div>
         </SectionCard>
 
-        <HeatmapChart
-          title={metricTabs.find((tab) => tab.key === activeMetric)?.label || '热图'}
-          xLabels={scanResult?.kaValues || []}
-          yLabels={scanResult?.k1Values || []}
-          data={heatmapData}
-          onPointClick={handlePointClick}
-        />
+        <div className="compare-heatmaps">
+          <HeatmapChart
+            title={`仅位置反馈（例3-19） - ${metricTabs.find((tab) => tab.key === activeMetric)?.label || '热图'}`}
+            xLabels={scanResult?.kaValues || []}
+            yLabels={scanResult?.k1Values || []}
+            data={positionOnlyHeatmapData}
+            onPointClick={handlePointClick}
+          />
+          <HeatmapChart
+            title={`位置+速度反馈（例3-20） - ${metricTabs.find((tab) => tab.key === activeMetric)?.label || '热图'}`}
+            xLabels={scanResult?.kaValues || []}
+            yLabels={scanResult?.k1Values || []}
+            data={positionVelocityHeatmapData}
+            onPointClick={handlePointClick}
+          />
+        </div>
       </div>
     </div>
   )
