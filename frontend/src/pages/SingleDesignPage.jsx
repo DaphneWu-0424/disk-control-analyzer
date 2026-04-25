@@ -118,6 +118,7 @@ export default function SingleDesignPage() {
     try {
       const data = await simulateSystem({
         // 显式区分两套模型：仅位置反馈时固定 K1=0。
+        modelType: params.modelType,
         Ka: params.Ka,
         K1: isPositionOnly ? 0 : params.K1,
         tEnd: params.tEnd,

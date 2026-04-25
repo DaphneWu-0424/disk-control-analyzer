@@ -10,6 +10,7 @@ def _round_list(arr, ndigits=6):
 
 
 def simulate_case(payload):
+    model_type = str(payload.modelType)
     Ka = float(payload.Ka)
     K1 = float(payload.K1)
     t_end = float(payload.tEnd)
@@ -20,7 +21,7 @@ def simulate_case(payload):
 
     t = np.arange(0, t_end + dt, dt)
 
-    sys_input, sys_disturbance = build_systems(Ka, K1)
+    sys_input, sys_disturbance = build_systems(Ka, K1, model_type)
 
     t_in, y_in = ct.step_response(sys_input, T=t)
     t_dis, y_dis = ct.step_response(sys_disturbance, T=t)
@@ -33,6 +34,7 @@ def simulate_case(payload):
     metrics.update(compute_disturbance_metrics(t_dis, y_dis))
 
     return {
+        "modelType": model_type,
         "inputResponse": {
             "time": _round_list(t_in),
             "output": _round_list(y_in),

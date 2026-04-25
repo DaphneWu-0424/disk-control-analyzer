@@ -22,7 +22,7 @@ schemas格式：
 '''
 
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -42,6 +42,10 @@ class Metrics(BaseModel):
 
 
 class SimulateRequest(BaseModel):
+    modelType: Literal["positionOnly", "positionVelocity"] = Field(
+        default="positionVelocity",
+        description="Control structure type",
+    )
     Ka: float = Field(..., gt=0, description="Amplifier gain")
     K1: float = Field(..., ge=0, description="Velocity feedback coefficient")
     tEnd: float = Field(..., gt=0, description="Simulation end time")
@@ -49,6 +53,7 @@ class SimulateRequest(BaseModel):
 
 
 class SimulateResponse(BaseModel):
+    modelType: Literal["positionOnly", "positionVelocity"]
     inputResponse: TimeSeries
     disturbanceResponse: TimeSeries
     metrics: Metrics
