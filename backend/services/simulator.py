@@ -14,6 +14,33 @@ def _round_list(arr, ndigits=6):
     return [round(float(x), ndigits) for x in arr]
 
 
+def _format_complex_points(values, ndigits=6):
+    return [
+        {
+            "real": round(float(np.real(value)), ndigits),
+            "imag": round(float(np.imag(value)), ndigits),
+        }
+        for value in values
+    ]
+
+
+def _trim_leading_zeros(coefficients):
+    for index, value in enumerate(coefficients):
+        if abs(value) > 1e-12:
+            return coefficients[index:]
+    return [0.0]
+
+
+def _build_unity_feedback_poles(numerator, denominator):
+    max_len = max(len(numerator), len(denominator))
+    padded_num = np.pad(np.asarray(numerator, dtype=float), (max_len - len(numerator), 0))
+    padded_den = np.pad(np.asarray(denominator, dtype=float), (max_len - len(denominator), 0))
+    characteristic = _trim_leading_zeros((padded_den + padded_num).tolist())
+    if characteristic == [0.0]:
+        return []
+    return np.roots(characteristic)
+
+
 def _build_scan_values(start, end, step):
     if step <= 0:
         raise ValueError("Scan step must be greater than 0")
@@ -77,18 +104,15 @@ def simulate_case(payload):
         system, trimmed_num, trimmed_den = build_transfer_function(numerator, denominator)
 
         poles = ct.poles(system)
+        root_locus_poles = _build_unity_feedback_poles(trimmed_num, trimmed_den)
         stable = bool(np.all(np.real(poles) < 0))
-        if stable:
-            t_out, y_out = ct.step_response(system, T=t)
-            y_out = np.asarray(y_out).squeeze()
-            response = {
-                "time": _round_list(t_out),
-                "output": _round_list(y_out),
-            }
-            metrics = compute_input_metrics(t_out, y_out)
-        else:
-            response = {"time": _round_list(t), "output": []}
-            metrics = {}
+        t_out, y_out = ct.step_response(system, T=t)
+        y_out = np.asarray(y_out).squeeze()
+        response = {
+            "time": _round_list(t_out),
+            "output": _round_list(y_out),
+        }
+        metrics = compute_input_metrics(t_out, y_out)
 
         frames.append(
             {
@@ -97,6 +121,8 @@ def simulate_case(payload):
                 "denominatorCoeffs": _round_list(trimmed_den),
                 "transferFunction": format_transfer_function(trimmed_num, trimmed_den),
                 "stable": stable,
+                "poles": _format_complex_points(poles),
+                "rootLocusPoles": _format_complex_points(root_locus_poles),
                 "response": response,
                 "metrics": metrics,
             }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import SectionCard from '../components/SectionCard'
 import LineChartCard from '../components/LineChartCard'
+import RootLocusChart from '../components/RootLocusChart'
 import MetricsPanel from '../components/MetricsPanel'
 import ErrorMessage from '../components/ErrorMessage'
 import Loading from '../components/Loading'
@@ -27,14 +28,19 @@ function coefficientLabel(power) {
   return `s^${power}`
 }
 
-function buildDefaultParameterConfig(parameters) {
+function buildParameterConfig(parameters, previousConfig = {}, preferredScanParameter = '') {
+  const nextScanParameter = parameters.includes(preferredScanParameter)
+    ? preferredScanParameter
+    : parameters[0] || ''
+
   return parameters.reduce((acc, name, index) => {
+    const previous = previousConfig[name] || {}
     acc[name] = {
-      mode: index === 0 ? 'scan' : 'fixed',
-      value: 1,
-      min: 0.1,
-      max: 10,
-      step: 0.1,
+      mode: name === nextScanParameter || (!nextScanParameter && index === 0) ? 'scan' : 'fixed',
+      value: previous.value ?? 1,
+      min: previous.min ?? 0.1,
+      max: previous.max ?? 10,
+      step: previous.step ?? 0.1,
     }
     return acc
   }, {})
@@ -110,9 +116,9 @@ export default function SingleDesignPage() {
       const data = await detectParameters({ numerator, denominator })
       const parameters = data?.parameters || []
       setDetectedParams(parameters)
-      const nextConfig = buildDefaultParameterConfig(parameters)
+      const nextConfig = buildParameterConfig(parameters, paramConfig, scanParameter)
       setParamConfig(nextConfig)
-      setScanParameter(parameters[0] || '')
+      setScanParameter(parameters.includes(scanParameter) ? scanParameter : parameters[0] || '')
     } catch (err) {
       const message =
         err?.response?.data?.detail ||
@@ -148,13 +154,13 @@ export default function SingleDesignPage() {
     })
   }
 
-  const validateBeforeRun = () => {
-    if (!detectedParams.length) return '请先解析参数'
-    if (!scanParameter) return '请选择一个扫描参数'
+  const validateBeforeRun = (parameters, configMap, activeScanParameter) => {
+    if (!parameters.length) return '至少需要一个可扫描参数'
+    if (!activeScanParameter) return '请选择一个扫描参数'
     if (timeConfig.start >= timeConfig.end) return '时间起点必须小于终点'
     if (timeConfig.points < 2) return '采样点数至少为 2'
 
-    const config = paramConfig[scanParameter]
+    const config = configMap[activeScanParameter]
     if (!config) return '扫描参数配置不存在'
     if (config.min > config.max) return '扫描参数最小值不能大于最大值'
     if (config.step <= 0) return '扫描参数步长必须大于 0'
@@ -162,32 +168,45 @@ export default function SingleDesignPage() {
   }
 
   const handleRun = async () => {
-    const validationError = validateBeforeRun()
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-
     setLoading(true)
     setError('')
     setPlaying(false)
 
     try {
+      const detectedData = await detectParameters({ numerator, denominator })
+      const parameters = detectedData?.parameters || []
+      const activeScanParameter = parameters.includes(scanParameter)
+        ? scanParameter
+        : parameters[0] || ''
+      const nextConfig = buildParameterConfig(parameters, paramConfig, activeScanParameter)
+      const validationError = validateBeforeRun(parameters, nextConfig, activeScanParameter)
+      if (validationError) {
+        throw new Error(validationError)
+      }
+
+      setDetectedParams(parameters)
+      setParamConfig(nextConfig)
+      setScanParameter(activeScanParameter)
+
       const payload = {
         numerator,
         denominator,
-        parameters: paramConfig,
-        scanParameter,
+        parameters: nextConfig,
+        scanParameter: activeScanParameter,
         time: timeConfig,
       }
       const data = await simulateSystem(payload)
-      setResult(data || emptyResult)
+      if (!data?.frames?.length) {
+        throw new Error('后端没有返回响应帧，请检查扫描范围和步长')
+      }
+
+      setResult(data)
       setFrameIndex(0)
     } catch (err) {
       const message =
         err?.response?.data?.detail ||
         err?.message ||
-        '阶跃响应生成失败，请检查后端服务'
+        '阶跃响应生成失败，请确认后端已启动并重新生成'
       setError(message)
     } finally {
       setLoading(false)
@@ -376,7 +395,7 @@ export default function SingleDesignPage() {
           </div>
 
           <div className="button-row">
-            <button onClick={handleRun} disabled={loading || detectedParams.length === 0}>
+            <button onClick={handleRun} disabled={loading}>
               {loading ? '计算中...' : '生成阶跃响应'}
             </button>
           </div>
@@ -393,6 +412,10 @@ export default function SingleDesignPage() {
             <div className="slider-panel">
               <div className="mode-hint">
                 当前 {result.scanParameter} = {currentFrame.parameterValue}
+              </div>
+              <div className="mode-hint">
+                阶跃响应点数：{currentResponse.output.length}
+                {currentFrame.stable ? '' : '，当前传递函数极点不稳定，响应可能发散'}
               </div>
               <input
                 className="frame-slider"
@@ -432,6 +455,13 @@ export default function SingleDesignPage() {
           title="单位阶跃响应"
           xData={currentResponse.time}
           yData={currentResponse.output}
+        />
+
+        <RootLocusChart
+          frames={result.frames}
+          currentFrame={currentFrame}
+          currentIndex={frameIndex}
+          scanParameter={result.scanParameter}
         />
 
         <MetricsPanel metrics={currentMetrics} title="当前帧时域指标" />

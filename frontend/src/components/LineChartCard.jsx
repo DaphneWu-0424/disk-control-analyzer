@@ -2,12 +2,16 @@ import ReactECharts from 'echarts-for-react' // 将 ECharts 图表作为 React �
 import SectionCard from './SectionCard'
 
 export default function LineChartCard({ title, xData = [], yData = [], yName = '输出'}) {
+    const pairedData = xData
+      .map((x, index) => [Number(x), Number(yData[index])])
+      .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+
     const option = {
         tooltip: { trigger: 'axis' },
         xAxis: {
-        type: 'category',
+        type: 'value',
         name: 't/s',
-        data: xData,
+        scale: false,
         },
         yAxis: {
         type: 'value',
@@ -17,9 +21,12 @@ export default function LineChartCard({ title, xData = [], yData = [], yName = '
         series: [
         {
             type: 'line',
-            data: yData,
+            data: pairedData,
             smooth: false,
             showSymbol: false,
+            lineStyle: {
+              width: 2,
+            },
         },
         ],
         grid: {
@@ -32,7 +39,11 @@ export default function LineChartCard({ title, xData = [], yData = [], yName = '
 
     return (
         <SectionCard title={title}>
-          <ReactECharts option={option} style={{ height: '320px' }} />
+          {pairedData.length ? (
+            <ReactECharts option={option} notMerge style={{ height: '320px' }} />
+          ) : (
+            <div className="mode-hint">暂无阶跃响应数据，请重新生成或检查当前参数是否导致计算发散。</div>
+          )}
         </SectionCard>
       )
 }

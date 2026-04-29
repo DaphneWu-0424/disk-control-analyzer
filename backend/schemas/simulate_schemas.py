@@ -7,6 +7,11 @@ class TimeSeries(BaseModel):
     output: List[float]
 
 
+class ComplexPoint(BaseModel):
+    real: float
+    imag: float
+
+
 class Metrics(BaseModel):
     riseTime: Optional[float] = None
     settlingTime: Optional[float] = None
@@ -52,6 +57,8 @@ class StepFrame(BaseModel):
     denominatorCoeffs: List[float]
     transferFunction: str
     stable: bool
+    poles: List[ComplexPoint]
+    rootLocusPoles: List[ComplexPoint]
     response: TimeSeries
     metrics: Metrics
 
