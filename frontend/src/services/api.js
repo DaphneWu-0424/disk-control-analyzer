@@ -10,10 +10,10 @@ export const simulateSystem = async (payload) => {
     return res.data
 }
 
-export const scanSystem = async (payload) => {
-    const res = await api.post('/scan', payload)
+export const detectParameters = async (payload) => {
+    const res = await api.post('/detect-parameters', payload)
     return res.data
-  }
+}
   
 
 export default api

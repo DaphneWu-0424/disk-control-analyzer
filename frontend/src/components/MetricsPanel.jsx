@@ -6,8 +6,6 @@ const metricItems = [
   { key: 'overshoot', label: '超调量' },
   { key: 'peak', label: '峰值' },
   { key: 'finalValue', label: '稳态值' },
-  { key: 'disturbancePeak', label: '扰动峰值' },
-  { key: 'disturbanceSettlingTime', label: '扰动调节时间' },
 ]
 
 export default function MetricsPanel({ metrics = {}, title = '时域指标' }) {

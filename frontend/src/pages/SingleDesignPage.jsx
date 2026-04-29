@@ -1,112 +1,168 @@
-/* data字段传输的数据结构如下：
-{
-  "inputResponse": {
-    "time": [0, 0.1, 0.2],
-    "output": [0, 0.4, 0.8]
-  },
-  "disturbanceResponse": {
-    "time": [0, 0.1, 0.2],
-    "output": [0, -0.001, -0.002]
-  },
-  "metrics": {
-    "riseTime": 0.12,
-    "settlingTime": 0.26,
-    "overshoot": 2.3,
-    "peak": 1.023,
-    "finalValue": 1.0,
-    "disturbancePeak": 0.002,
-    "disturbanceSettlingTime": 0.24
-  }
-}
-*/
-import { useState } from 'react'
-import NumberInput from '../components/NumberInput'
+import { useEffect, useMemo, useState } from 'react'
 import SectionCard from '../components/SectionCard'
 import LineChartCard from '../components/LineChartCard'
 import MetricsPanel from '../components/MetricsPanel'
 import ErrorMessage from '../components/ErrorMessage'
 import Loading from '../components/Loading'
-import { simulateSystem } from '../services/api'
+import { detectParameters, simulateSystem } from '../services/api'
 
-const MODEL_TYPES = {
-  POSITION_ONLY: 'positionOnly',
-  POSITION_VELOCITY: 'positionVelocity',
-}
+const POWERS = [4, 3, 2, 1, 0]
 
-const modelOptions = [
-  { key: MODEL_TYPES.POSITION_ONLY, label: '仅位置反馈（例3-19）' },
-  { key: MODEL_TYPES.POSITION_VELOCITY, label: '位置+速度反馈（例3-20）' },
-]
-
-const defaultParams = {
-  modelType: MODEL_TYPES.POSITION_VELOCITY,
-  Ka: 100,
-  K1: 0.05,
-  tEnd: 1,
-  dt: 0.01,
+const defaultNumerator = ['', '', '', 'K1', 'K2']
+const defaultDenominator = ['', '', '1', 'K3', '5']
+const defaultTime = {
+  start: 0,
+  end: 10,
+  points: 1000,
 }
 
 const emptyResult = {
-  inputResponse: {
-    time: [],
-    output: [],
-  },
-  disturbanceResponse: {
-    time: [],
-    output: [],
-  },
-  metrics: {},
+  scanParameter: '',
+  frames: [],
 }
 
-function normalizeSimulationResult(data) {
+function coefficientLabel(power) {
+  if (power === 0) return '常数项'
+  if (power === 1) return 's'
+  return `s^${power}`
+}
+
+function buildDefaultParameterConfig(parameters) {
+  return parameters.reduce((acc, name, index) => {
+    acc[name] = {
+      mode: index === 0 ? 'scan' : 'fixed',
+      value: 1,
+      min: 0.1,
+      max: 10,
+      step: 0.1,
+    }
+    return acc
+  }, {})
+}
+
+function normalizeMetrics(metrics = {}) {
   return {
-    inputResponse: {
-      time: data?.inputResponse?.time || [],
-      output: data?.inputResponse?.output || [],
-    },
-    disturbanceResponse: {
-      time: data?.disturbanceResponse?.time || [],
-      output: data?.disturbanceResponse?.output || [],
-    },
-    metrics: {
-      riseTime: data?.metrics?.riseTime ?? '--',
-      settlingTime: data?.metrics?.settlingTime ?? '--',
-      overshoot: data?.metrics?.overshoot ?? '--',
-      peak: data?.metrics?.peak ?? '--',
-      finalValue: data?.metrics?.finalValue ?? '--',
-      disturbancePeak: data?.metrics?.disturbancePeak ?? '--',
-      disturbanceSettlingTime: data?.metrics?.disturbanceSettlingTime ?? '--',
-    },
+    riseTime: metrics.riseTime ?? '--',
+    settlingTime: metrics.settlingTime ?? '--',
+    overshoot: metrics.overshoot ?? '--',
+    peak: metrics.peak ?? '--',
+    finalValue: metrics.finalValue ?? '--',
   }
 }
 
 export default function SingleDesignPage() {
-  const [params, setParams] = useState(defaultParams)
+  const [numerator, setNumerator] = useState(defaultNumerator)
+  const [denominator, setDenominator] = useState(defaultDenominator)
+  const [detectedParams, setDetectedParams] = useState([])
+  const [paramConfig, setParamConfig] = useState({})
+  const [scanParameter, setScanParameter] = useState('')
+  const [timeConfig, setTimeConfig] = useState(defaultTime)
   const [result, setResult] = useState(emptyResult)
+  const [frameIndex, setFrameIndex] = useState(0)
+  const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const selectedModelLabel =
-    modelOptions.find((item) => item.key === params.modelType)?.label || '当前模型'
-  const isPositionOnly = params.modelType === MODEL_TYPES.POSITION_ONLY
 
-  const handleChange = (key, value) => {
-    setParams((prev) => ({
+  const currentFrame = result.frames[frameIndex] || null
+  const currentResponse = currentFrame?.response || { time: [], output: [] }
+  const currentMetrics = normalizeMetrics(currentFrame?.metrics)
+
+  const previewText = useMemo(() => {
+    const renderSide = (values) =>
+      values
+        .map((value, index) => {
+          const text = value.trim() || '0'
+          const power = POWERS[index]
+          if (text === '0') return null
+          if (power === 0) return text
+          if (power === 1) return `${text}·s`
+          return `${text}·s^${power}`
+        })
+        .filter(Boolean)
+        .join(' + ') || '0'
+
+    return `G(s) = (${renderSide(numerator)}) / (${renderSide(denominator)})`
+  }, [numerator, denominator])
+
+  useEffect(() => {
+    if (!playing || result.frames.length <= 1) return undefined
+
+    const timer = window.setInterval(() => {
+      setFrameIndex((prev) => (prev + 1) % result.frames.length)
+    }, 450)
+
+    return () => window.clearInterval(timer)
+  }, [playing, result.frames.length])
+
+  const handleCoefficientChange = (side, index, value) => {
+    const updater = side === 'numerator' ? setNumerator : setDenominator
+    updater((prev) => prev.map((item, itemIndex) => (itemIndex === index ? value : item)))
+  }
+
+  const handleDetectParameters = async () => {
+    setLoading(true)
+    setError('')
+    setResult(emptyResult)
+    setFrameIndex(0)
+    setPlaying(false)
+
+    try {
+      const data = await detectParameters({ numerator, denominator })
+      const parameters = data?.parameters || []
+      setDetectedParams(parameters)
+      const nextConfig = buildDefaultParameterConfig(parameters)
+      setParamConfig(nextConfig)
+      setScanParameter(parameters[0] || '')
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '参数解析失败，请检查系数表达式'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleParamChange = (name, key, value) => {
+    setParamConfig((prev) => ({
       ...prev,
-      [key]: value,
+      [name]: {
+        ...prev[name],
+        [key]: value,
+      },
     }))
   }
 
-  const validateParams = () => {
-    if (params.Ka <= 0) return 'Ka 必须大于 0'
-    if (!isPositionOnly && params.K1 < 0) return 'K1 不能小于 0'
-    if (params.tEnd <= 0) return '仿真时长 tEnd 必须大于 0'
-    if (params.dt <= 0) return '时间步长 dt 必须大于 0'
-    if (params.dt >= params.tEnd) return '时间步长 dt 必须小于仿真时长 tEnd'
+  const handleScanParameterChange = (name) => {
+    setScanParameter(name)
+    setParamConfig((prev) => {
+      const next = {}
+      Object.keys(prev).forEach((key) => {
+        next[key] = {
+          ...prev[key],
+          mode: key === name ? 'scan' : 'fixed',
+        }
+      })
+      return next
+    })
+  }
+
+  const validateBeforeRun = () => {
+    if (!detectedParams.length) return '请先解析参数'
+    if (!scanParameter) return '请选择一个扫描参数'
+    if (timeConfig.start >= timeConfig.end) return '时间起点必须小于终点'
+    if (timeConfig.points < 2) return '采样点数至少为 2'
+
+    const config = paramConfig[scanParameter]
+    if (!config) return '扫描参数配置不存在'
+    if (config.min > config.max) return '扫描参数最小值不能大于最大值'
+    if (config.step <= 0) return '扫描参数步长必须大于 0'
     return ''
   }
 
   const handleRun = async () => {
-    const validationError = validateParams()
+    const validationError = validateBeforeRun()
     if (validationError) {
       setError(validationError)
       return
@@ -114,26 +170,24 @@ export default function SingleDesignPage() {
 
     setLoading(true)
     setError('')
+    setPlaying(false)
 
     try {
-      const data = await simulateSystem({
-        // 显式区分两套模型：仅位置反馈时固定 K1=0。
-        modelType: params.modelType,
-        Ka: params.Ka,
-        K1: isPositionOnly ? 0 : params.K1,
-        tEnd: params.tEnd,
-        dt: params.dt,
-      })
-
-      setResult(normalizeSimulationResult(data))
+      const payload = {
+        numerator,
+        denominator,
+        parameters: paramConfig,
+        scanParameter,
+        time: timeConfig,
+      }
+      const data = await simulateSystem(payload)
+      setResult(data || emptyResult)
+      setFrameIndex(0)
     } catch (err) {
-      console.error('simulate failed:', err)
-
       const message =
         err?.response?.data?.detail ||
         err?.message ||
-        '仿真失败，请检查后端服务是否启动'
-
+        '阶跃响应生成失败，请检查后端服务'
       setError(message)
     } finally {
       setLoading(false)
@@ -141,70 +195,189 @@ export default function SingleDesignPage() {
   }
 
   const handleReset = () => {
-    setParams(defaultParams)
+    setNumerator(defaultNumerator)
+    setDenominator(defaultDenominator)
+    setDetectedParams([])
+    setParamConfig({})
+    setScanParameter('')
+    setTimeConfig(defaultTime)
     setResult(emptyResult)
+    setFrameIndex(0)
+    setPlaying(false)
     setError('')
   }
 
   return (
-    <div className="page-grid single-page">
+    <div className="page-grid transfer-page">
       <div className="left-panel">
-        <SectionCard title="单参数设计">
-          <div className="tab-row">
-            {modelOptions.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                className={params.modelType === option.key ? 'tab-button active' : 'tab-button'}
-                onClick={() => handleChange('modelType', option.key)}
-                disabled={loading}
-              >
-                {option.label}
-              </button>
+        <SectionCard title="传递函数系数填空">
+          <div className="mode-hint">{previewText}</div>
+          <div className="coefficient-editor">
+            <div className="coefficient-title">分子</div>
+            {POWERS.map((power, index) => (
+              <label className="form-field" key={`num-${power}`}>
+                <span>{coefficientLabel(power)}</span>
+                <input
+                  type="text"
+                  value={numerator[index]}
+                  placeholder="空白表示 0"
+                  onChange={(event) =>
+                    handleCoefficientChange('numerator', index, event.target.value)
+                  }
+                />
+              </label>
+            ))}
+
+            <div className="coefficient-title">分母</div>
+            {POWERS.map((power, index) => (
+              <label className="form-field" key={`den-${power}`}>
+                <span>{coefficientLabel(power)}</span>
+                <input
+                  type="text"
+                  value={denominator[index]}
+                  placeholder="空白表示 0"
+                  onChange={(event) =>
+                    handleCoefficientChange('denominator', index, event.target.value)
+                  }
+                />
+              </label>
             ))}
           </div>
 
-          <div className="mode-hint">当前模型：{selectedModelLabel}</div>
+          <div className="button-row button-row-inline">
+            <button onClick={handleDetectParameters} disabled={loading}>
+              解析参数
+            </button>
+            <button className="secondary-button" onClick={handleReset} disabled={loading}>
+              恢复默认
+            </button>
+          </div>
+        </SectionCard>
 
-          <div className="form-grid">
-            <NumberInput
-              label="Ka"
-              value={params.Ka}
-              onChange={(v) => handleChange('Ka', v)}
-            />
-            <NumberInput
-              label={isPositionOnly ? 'K1（仅位置反馈时固定为 0）' : 'K1'}
-              value={params.K1}
-              onChange={(v) => handleChange('K1', v)}
-              step="0.01"
-              disabled={isPositionOnly}
-            />
-            <NumberInput
-              label="仿真时长 tEnd"
-              value={params.tEnd}
-              onChange={(v) => handleChange('tEnd', v)}
-              step="0.1"
-            />
-            <NumberInput
-              label="时间步长 dt"
-              value={params.dt}
-              onChange={(v) => handleChange('dt', v)}
-              step="0.001"
-            />
+        <SectionCard title="参数配置">
+          {detectedParams.length === 0 ? (
+            <div className="mode-hint">解析后会自动显示 K1、K2 等参数配置。</div>
+          ) : (
+            <div className="parameter-list">
+              <label className="form-field">
+                <span>扫描参数</span>
+                <select
+                  value={scanParameter}
+                  onChange={(event) => handleScanParameterChange(event.target.value)}
+                >
+                  {detectedParams.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {detectedParams.map((name) => {
+                const config = paramConfig[name] || {}
+                const isScan = name === scanParameter
+
+                return (
+                  <div className="parameter-card" key={name}>
+                    <div className="parameter-card-title">
+                      {name} {isScan ? '（滑块参数）' : '（固定参数）'}
+                    </div>
+                    <label className="form-field">
+                      <span>固定值</span>
+                      <input
+                        type="number"
+                        value={config.value ?? 1}
+                        step="any"
+                        onChange={(event) =>
+                          handleParamChange(name, 'value', Number(event.target.value))
+                        }
+                      />
+                    </label>
+                    {isScan ? (
+                      <div className="scan-config-grid">
+                        <label className="form-field">
+                          <span>最小值</span>
+                          <input
+                            type="number"
+                            value={config.min ?? 0.1}
+                            step="any"
+                            onChange={(event) =>
+                              handleParamChange(name, 'min', Number(event.target.value))
+                            }
+                          />
+                        </label>
+                        <label className="form-field">
+                          <span>最大值</span>
+                          <input
+                            type="number"
+                            value={config.max ?? 10}
+                            step="any"
+                            onChange={(event) =>
+                              handleParamChange(name, 'max', Number(event.target.value))
+                            }
+                          />
+                        </label>
+                        <label className="form-field">
+                          <span>步长</span>
+                          <input
+                            type="number"
+                            value={config.step ?? 0.1}
+                            step="any"
+                            onChange={(event) =>
+                              handleParamChange(name, 'step', Number(event.target.value))
+                            }
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="仿真时间">
+          <div className="scan-config-grid">
+            <label className="form-field">
+              <span>起点</span>
+              <input
+                type="number"
+                value={timeConfig.start}
+                step="any"
+                onChange={(event) =>
+                  setTimeConfig((prev) => ({ ...prev, start: Number(event.target.value) }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>终点</span>
+              <input
+                type="number"
+                value={timeConfig.end}
+                step="any"
+                onChange={(event) =>
+                  setTimeConfig((prev) => ({ ...prev, end: Number(event.target.value) }))
+                }
+              />
+            </label>
+            <label className="form-field">
+              <span>采样点数</span>
+              <input
+                type="number"
+                value={timeConfig.points}
+                min="2"
+                step="1"
+                onChange={(event) =>
+                  setTimeConfig((prev) => ({ ...prev, points: Number(event.target.value) }))
+                }
+              />
+            </label>
           </div>
 
-          <div className="button-row button-row-inline">
-            <button onClick={handleRun} disabled={loading}>
-              {loading ? '仿真中...' : '运行仿真'}
-            </button>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={handleReset}
-              disabled={loading}
-            >
-              恢复默认
+          <div className="button-row">
+            <button onClick={handleRun} disabled={loading || detectedParams.length === 0}>
+              {loading ? '计算中...' : '生成阶跃响应'}
             </button>
           </div>
 
@@ -213,21 +386,55 @@ export default function SingleDesignPage() {
       </div>
 
       <div className="right-panel">
-        {loading ? <Loading text="正在请求后端并计算响应..." /> : null}
+        {loading ? <Loading text="正在计算参数扫描响应..." /> : null}
+
+        <SectionCard title="滑块动画">
+          {currentFrame ? (
+            <div className="slider-panel">
+              <div className="mode-hint">
+                当前 {result.scanParameter} = {currentFrame.parameterValue}
+              </div>
+              <input
+                className="frame-slider"
+                type="range"
+                min="0"
+                max={Math.max(result.frames.length - 1, 0)}
+                value={frameIndex}
+                onChange={(event) => setFrameIndex(Number(event.target.value))}
+              />
+              <div className="button-row-inline">
+                <button
+                  type="button"
+                  onClick={() => setPlaying((prev) => !prev)}
+                  disabled={result.frames.length <= 1}
+                >
+                  {playing ? '暂停' : '播放'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setPlaying(false)
+                    setFrameIndex(0)
+                  }}
+                >
+                  重置动画
+                </button>
+              </div>
+              <div className="transfer-text">{currentFrame.transferFunction}</div>
+            </div>
+          ) : (
+            <div className="mode-hint">生成响应后，可用滑块查看参数变化下的阶跃响应。</div>
+          )}
+        </SectionCard>
 
         <LineChartCard
-          title={`${selectedModelLabel} - 单位阶跃输入响应`}
-          xData={result.inputResponse.time}
-          yData={result.inputResponse.output}
+          title="单位阶跃响应"
+          xData={currentResponse.time}
+          yData={currentResponse.output}
         />
 
-        <LineChartCard
-          title={`${selectedModelLabel} - 单位阶跃扰动响应`}
-          xData={result.disturbanceResponse.time}
-          yData={result.disturbanceResponse.output}
-        />
-
-        <MetricsPanel metrics={result.metrics} title={`${selectedModelLabel} - 时域指标`} />
+        <MetricsPanel metrics={currentMetrics} title="当前帧时域指标" />
       </div>
     </div>
   )

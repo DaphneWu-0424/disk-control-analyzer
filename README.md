@@ -1,62 +1,46 @@
-# Disk Control Analyzer
+# Transfer Function Analyzer
 
-A visual tool for disk control analysis.
+A frontend + backend tool for visualizing step responses of parameterized transfer functions.
 
-This project provides a simple frontend + backend demo for simulating and visualizing the response of a disk control system. You can adjust system parameters, run simulations, and observe both reference-input and disturbance responses.
+The app supports transfer functions up to fourth order. Users fill numerator and denominator coefficient boxes from `s^4` to the constant term, use symbolic parameters such as `K1`, `K2`, `zeta`, or `wn`, and let the backend detect those parameters automatically. One parameter can then be selected as the slider/animation parameter while the others stay fixed.
 
----
+## Features
 
-## Overview
+- Fourth-order coefficient form for numerator and denominator input
+- Automatic parameter detection from coefficient expressions
+- Single-parameter scan with slider and playback animation
+- Step-response curve rendering with ECharts
+- Basic time-domain metrics: rise time, settling time, overshoot, peak, final value
 
-The transfer functions used in this demo project are:
+## Tech Stack
 
-$$
-G_1(s) = \frac{5000}{s+1000}, \quad G_2(s)= \frac{1}{s(s+20)}
-$$
-When the disturbance $N(s)$ is zero, the closed loop transfer function is:
-$$
-\phi(s) = \frac{K_aG_1(s)G_2(s)}{1+K_aG_1(s)G_2(s)} = \frac{5000K_a}{s(s+20)(s+1000)+5000K_a}
-$$
+- Frontend: React, Vite, ECharts
+- Backend: FastAPI, python-control, NumPy, SymPy
 
-When the input $R(s)$ is zero, the closed loop transfer function is:
-$$
-\phi(s) = \frac{C(s)}{N(s)} = \frac{-G_2(s)}{1+K_aG_1(s)G_2(s)}
-$$
+## Run
 
-This project is mainly intended as a **visual analysis demo**.  
-If you want to adapt it to another control system, just update:
+Start the backend:
 
-- the transfer functions
-- the related parameters
-- the corresponding frontend/backend calculation logic if needed
-
----
-## Project Structure
-
-```text
-disk-control-analyzer/
-├─ frontend/   # React frontend
-├─ backend/    # FastAPI backend
-└─ README.md
+```shell
+cd backend
+poetry install
+poetry run uvicorn app:app --reload --port 8001
 ```
 
----
-## Operation steps 
-### 1. start frontend
+Start the frontend:
+
 ```shell
 cd frontend
+npm install
 npm run dev
 ```
 
-### 2. start backend
-```shell
-cd backend
-uvicorn app:app --reload --port 8001
-```
+The frontend calls the backend at `http://127.0.0.1:8001/api`.
 
----
-## Notes
-- Make sure the frontend and backend are both running before using the demo.
-- The frontend port in this project is 5174, if If Vite starts on a different port, please update the corresponding setting in `backend/app.py`.
-- The backend default port in this project is 8001.
-- If you change the backend port or API path, remember to update the frontend request configuration as well.
+## Input Rules
+
+- Coefficient boxes accept numbers and simple parameter expressions, for example `K1`, `K2`, `2*zeta*wn`, or `wn^2`.
+- Use explicit multiplication, such as `2*K1`, not `2K1`.
+- Parameter names must start with a letter or underscore and then contain letters, numbers, or underscores.
+- The Laplace variable `s` is reserved and should not be entered as a parameter inside coefficient boxes.
+- The first version supports one scan parameter at a time.

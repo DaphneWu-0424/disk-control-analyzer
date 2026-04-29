@@ -7,7 +7,6 @@
 import { createBrowserRouter } from "react-router-dom"; // 管理URL和UI的同步
 import App from './App'
 import SingleDesignPage from './pages/SingleDesignPage'
-import ScanPage from './pages/ScanPage'
 
 const router = createBrowserRouter(
     [
@@ -20,8 +19,6 @@ const router = createBrowserRouter(
             children: [
                 {index: true, element: <SingleDesignPage />},
                 // index: true 表示当父路由的路径精确匹配 / 时，这个子路由会被渲染到父路由的 <Outlet /> 位置，在outlet块里显示singledesignpage
-                { path: 'scan', element: <ScanPage /> },
-                // 当访问 /scan 时，在 <App> 的 <Outlet> 里显示 <ScanPage />
             ],
         },
     ]

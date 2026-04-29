@@ -71,8 +71,9 @@
   }
   
   .single-page,
+  .transfer-page,
   .scan-page {
-    grid-template-columns: 320px 1fr;
+    grid-template-columns: 380px 1fr;
   }
   
   .left-panel,
@@ -122,14 +123,17 @@
     color: #4b5563;
   }
   
-  .form-field input {
+  .form-field input,
+  .form-field select {
     height: 40px;
     border: 1px solid #d1d5db;
     border-radius: 8px;
     padding: 0 10px;
+    background: white;
   }
 
-  .form-field input:disabled {
+  .form-field input:disabled,
+  .form-field select:disabled {
     background: #f3f4f6;
     color: #6b7280;
     cursor: not-allowed;
@@ -182,6 +186,7 @@
   
   @media (max-width: 1000px) {
     .single-page,
+    .transfer-page,
     .scan-page {
       grid-template-columns: 1fr;
     }
@@ -243,8 +248,65 @@
     font-size: 14px;
   }
 
+  .coefficient-editor {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .coefficient-title {
+    grid-column: 1 / -1;
+    margin-top: 4px;
+    font-weight: 700;
+    color: #1f2937;
+  }
+
+  .parameter-list,
+  .slider-panel {
+    display: grid;
+    gap: 14px;
+  }
+
+  .parameter-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 12px;
+    background: #f8fafc;
+  }
+
+  .parameter-card-title {
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+
+  .scan-config-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .frame-slider {
+    width: 100%;
+  }
+
+  .transfer-text {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    font-family: Consolas, "Courier New", monospace;
+    overflow-wrap: anywhere;
+  }
+
   @media (max-width: 1400px) {
     .compare-heatmaps {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 700px) {
+    .coefficient-editor,
+    .scan-config-grid {
       grid-template-columns: 1fr;
     }
   }

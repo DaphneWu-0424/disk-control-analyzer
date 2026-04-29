@@ -1,47 +1,108 @@
 import numpy as np
 import control as ct
 
-from services.control_model import build_systems
-from services.metrics import compute_input_metrics, compute_disturbance_metrics
+from services.metrics import compute_input_metrics
+from services.transfer_function import (
+    build_transfer_function,
+    detect_parameters,
+    evaluate_coefficients,
+    format_transfer_function,
+)
 
 
 def _round_list(arr, ndigits=6):
     return [round(float(x), ndigits) for x in arr]
 
 
+def _build_scan_values(start, end, step):
+    if step <= 0:
+        raise ValueError("Scan step must be greater than 0")
+    if start > end:
+        raise ValueError("Scan min cannot be greater than scan max")
+
+    values = np.arange(start, end + step * 0.5, step)
+    if len(values) > 300:
+        raise ValueError("Scan range produces too many frames; reduce the range or increase the step")
+    return [round(float(value), 10) for value in values]
+
+
+def detect_transfer_parameters(payload):
+    return {"parameters": detect_parameters(payload.numerator, payload.denominator)}
+
+
+def _collect_fixed_values(payload, scan_value):
+    parameter_values = {}
+
+    for name, config in payload.parameters.items():
+        if name == payload.scanParameter:
+            parameter_values[name] = scan_value
+            continue
+
+        if config.value is None:
+            raise ValueError(f"Fixed parameter '{name}' requires a value")
+        parameter_values[name] = float(config.value)
+
+    return parameter_values
+
+
 def simulate_case(payload):
-    model_type = str(payload.modelType)
-    Ka = float(payload.Ka)
-    K1 = float(payload.K1)
-    t_end = float(payload.tEnd)
-    dt = float(payload.dt)
+    if payload.time.start >= payload.time.end:
+        raise ValueError("time.start must be smaller than time.end")
 
-    if dt >= t_end:
-        raise ValueError("dt must be smaller than tEnd")
+    detected_parameters = set(detect_parameters(payload.numerator, payload.denominator))
+    provided_parameters = set(payload.parameters.keys())
+    missing_parameters = sorted(detected_parameters - provided_parameters)
+    if missing_parameters:
+        raise ValueError(f"Missing configuration for parameter(s): {', '.join(missing_parameters)}")
 
-    t = np.arange(0, t_end + dt, dt)
+    if payload.scanParameter not in detected_parameters:
+        raise ValueError("scanParameter must be one of the detected transfer-function parameters")
 
-    sys_input, sys_disturbance = build_systems(Ka, K1, model_type)
+    scan_configs = [name for name, config in payload.parameters.items() if config.mode == "scan"]
+    if scan_configs != [payload.scanParameter]:
+        raise ValueError("Exactly one parameter must be configured as the scan parameter")
 
-    t_in, y_in = ct.step_response(sys_input, T=t)
-    t_dis, y_dis = ct.step_response(sys_disturbance, T=t)
+    scan_config = payload.parameters[payload.scanParameter]
+    if scan_config.min is None or scan_config.max is None or scan_config.step is None:
+        raise ValueError("Scan parameter requires min, max, and step")
 
-    y_in = np.asarray(y_in).squeeze()
-    y_dis = np.asarray(y_dis).squeeze()
+    scan_values = _build_scan_values(scan_config.min, scan_config.max, scan_config.step)
+    t = np.linspace(payload.time.start, payload.time.end, payload.time.points)
+    frames = []
 
-    metrics = {}
-    metrics.update(compute_input_metrics(t_in, y_in))
-    metrics.update(compute_disturbance_metrics(t_dis, y_dis))
+    for scan_value in scan_values:
+        parameter_values = _collect_fixed_values(payload, scan_value)
+        numerator = evaluate_coefficients(payload.numerator, parameter_values)
+        denominator = evaluate_coefficients(payload.denominator, parameter_values)
+        system, trimmed_num, trimmed_den = build_transfer_function(numerator, denominator)
+
+        poles = ct.poles(system)
+        stable = bool(np.all(np.real(poles) < 0))
+        if stable:
+            t_out, y_out = ct.step_response(system, T=t)
+            y_out = np.asarray(y_out).squeeze()
+            response = {
+                "time": _round_list(t_out),
+                "output": _round_list(y_out),
+            }
+            metrics = compute_input_metrics(t_out, y_out)
+        else:
+            response = {"time": _round_list(t), "output": []}
+            metrics = {}
+
+        frames.append(
+            {
+                "parameterValue": round(float(scan_value), 6),
+                "numeratorCoeffs": _round_list(trimmed_num),
+                "denominatorCoeffs": _round_list(trimmed_den),
+                "transferFunction": format_transfer_function(trimmed_num, trimmed_den),
+                "stable": stable,
+                "response": response,
+                "metrics": metrics,
+            }
+        )
 
     return {
-        "modelType": model_type,
-        "inputResponse": {
-            "time": _round_list(t_in),
-            "output": _round_list(y_in),
-        },
-        "disturbanceResponse": {
-            "time": _round_list(t_dis),
-            "output": _round_list(y_dis),
-        },
-        "metrics": metrics,
+        "scanParameter": payload.scanParameter,
+        "frames": frames,
     }

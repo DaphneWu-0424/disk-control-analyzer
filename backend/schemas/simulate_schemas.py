@@ -1,28 +1,4 @@
-'''
-schemas格式：
-{
-  "inputResponse": {
-    "time": [0, 0.1, 0.2],
-    "output": [0, 0.4, 0.8]
-  },
-  "disturbanceResponse": {
-    "time": [0, 0.1, 0.2],
-    "output": [0, -0.001, -0.002]
-  },
-  "metrics": {
-    "riseTime": 0.12,
-    "settlingTime": 0.26,
-    "overshoot": 2.3,
-    "peak": 1.023,
-    "finalValue": 1.0,
-    "disturbancePeak": 0.002,
-    "disturbanceSettlingTime": 0.24
-  }
-}
-'''
-
-
-from typing import List, Literal, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -37,23 +13,49 @@ class Metrics(BaseModel):
     overshoot: Optional[float] = None
     peak: Optional[float] = None
     finalValue: Optional[float] = None
-    disturbancePeak: Optional[float] = None
-    disturbanceSettlingTime: Optional[float] = None
+
+
+class DetectParametersRequest(BaseModel):
+    numerator: List[str] = Field(..., min_length=5, max_length=5)
+    denominator: List[str] = Field(..., min_length=5, max_length=5)
+
+
+class DetectParametersResponse(BaseModel):
+    parameters: List[str]
+
+
+class ParameterConfig(BaseModel):
+    mode: str = Field(default="fixed", pattern="^(fixed|scan)$")
+    value: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    step: Optional[float] = None
+
+
+class TimeConfig(BaseModel):
+    start: float = Field(default=0)
+    end: float = Field(..., gt=0)
+    points: int = Field(..., ge=2, le=5000)
 
 
 class SimulateRequest(BaseModel):
-    modelType: Literal["positionOnly", "positionVelocity"] = Field(
-        default="positionVelocity",
-        description="Control structure type",
-    )
-    Ka: float = Field(..., gt=0, description="Amplifier gain")
-    K1: float = Field(..., ge=0, description="Velocity feedback coefficient")
-    tEnd: float = Field(..., gt=0, description="Simulation end time")
-    dt: float = Field(..., gt=0, description="Time step")
+    numerator: List[str] = Field(..., min_length=5, max_length=5)
+    denominator: List[str] = Field(..., min_length=5, max_length=5)
+    parameters: Dict[str, ParameterConfig] = Field(default_factory=dict)
+    scanParameter: str
+    time: TimeConfig
+
+
+class StepFrame(BaseModel):
+    parameterValue: float
+    numeratorCoeffs: List[float]
+    denominatorCoeffs: List[float]
+    transferFunction: str
+    stable: bool
+    response: TimeSeries
+    metrics: Metrics
 
 
 class SimulateResponse(BaseModel):
-    modelType: Literal["positionOnly", "positionVelocity"]
-    inputResponse: TimeSeries
-    disturbanceResponse: TimeSeries
-    metrics: Metrics
+    scanParameter: str
+    frames: List[StepFrame]
