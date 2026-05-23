@@ -21,8 +21,8 @@ class Metrics(BaseModel):
 
 
 class DetectParametersRequest(BaseModel):
-    numerator: List[str] = Field(..., min_length=5, max_length=5)
-    denominator: List[str] = Field(..., min_length=5, max_length=5)
+    numerator: List[str] = Field(..., min_length=6, max_length=6)
+    denominator: List[str] = Field(..., min_length=6, max_length=6)
 
 
 class DetectParametersResponse(BaseModel):
@@ -44,8 +44,8 @@ class TimeConfig(BaseModel):
 
 
 class SimulateRequest(BaseModel):
-    numerator: List[str] = Field(..., min_length=5, max_length=5)
-    denominator: List[str] = Field(..., min_length=5, max_length=5)
+    numerator: List[str] = Field(..., min_length=6, max_length=6)
+    denominator: List[str] = Field(..., min_length=6, max_length=6)
     parameters: Dict[str, ParameterConfig] = Field(default_factory=dict)
     scanParameter: str
     time: TimeConfig

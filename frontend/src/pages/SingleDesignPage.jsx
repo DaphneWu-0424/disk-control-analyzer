@@ -7,10 +7,20 @@ import ErrorMessage from '../components/ErrorMessage'
 import Loading from '../components/Loading'
 import { detectParameters, simulateSystem } from '../services/api'
 
-const POWERS = [4, 3, 2, 1, 0]
+const POWERS = [5, 4, 3, 2, 1, 0]
 
-const defaultNumerator = ['', '', '', 'K1', 'K2']
-const defaultDenominator = ['', '', '1', 'K3', '5']
+const defaultNumerator = ['', '', '', '', 'k', '2*k']
+const defaultDenominator = ['', '', '1', '3', '2', '1']
+const defaultScanParameter = 'k'
+const defaultParamConfig = {
+  [defaultScanParameter]: {
+    mode: 'scan',
+    value: 1,
+    min: 0.1,
+    max: 10,
+    step: 0.1,
+  },
+}
 const defaultTime = {
   start: 0,
   end: 10,
@@ -59,9 +69,9 @@ function normalizeMetrics(metrics = {}) {
 export default function SingleDesignPage() {
   const [numerator, setNumerator] = useState(defaultNumerator)
   const [denominator, setDenominator] = useState(defaultDenominator)
-  const [detectedParams, setDetectedParams] = useState([])
-  const [paramConfig, setParamConfig] = useState({})
-  const [scanParameter, setScanParameter] = useState('')
+  const [detectedParams, setDetectedParams] = useState([defaultScanParameter])
+  const [paramConfig, setParamConfig] = useState(defaultParamConfig)
+  const [scanParameter, setScanParameter] = useState(defaultScanParameter)
   const [timeConfig, setTimeConfig] = useState(defaultTime)
   const [result, setResult] = useState(emptyResult)
   const [frameIndex, setFrameIndex] = useState(0)
@@ -95,7 +105,7 @@ export default function SingleDesignPage() {
 
     const timer = window.setInterval(() => {
       setFrameIndex((prev) => (prev + 1) % result.frames.length)
-    }, 450)
+    }, 900)
 
     return () => window.clearInterval(timer)
   }, [playing, result.frames.length])
@@ -206,7 +216,7 @@ export default function SingleDesignPage() {
       const message =
         err?.response?.data?.detail ||
         err?.message ||
-        '阶跃响应生成失败，请确认后端已启动并重新生成'
+        '根轨迹或阶跃响应生成失败，请确认后端已启动并重新生成'
       setError(message)
     } finally {
       setLoading(false)
@@ -216,9 +226,9 @@ export default function SingleDesignPage() {
   const handleReset = () => {
     setNumerator(defaultNumerator)
     setDenominator(defaultDenominator)
-    setDetectedParams([])
-    setParamConfig({})
-    setScanParameter('')
+    setDetectedParams([defaultScanParameter])
+    setParamConfig(defaultParamConfig)
+    setScanParameter(defaultScanParameter)
     setTimeConfig(defaultTime)
     setResult(emptyResult)
     setFrameIndex(0)
@@ -275,7 +285,7 @@ export default function SingleDesignPage() {
 
         <SectionCard title="参数配置">
           {detectedParams.length === 0 ? (
-            <div className="mode-hint">解析后会自动显示 K1、K2 等参数配置。</div>
+            <div className="mode-hint">解析后会自动显示 k 等参数配置。</div>
           ) : (
             <div className="parameter-list">
               <label className="form-field">
@@ -396,7 +406,7 @@ export default function SingleDesignPage() {
 
           <div className="button-row">
             <button onClick={handleRun} disabled={loading}>
-              {loading ? '计算中...' : '生成阶跃响应'}
+              {loading ? '计算中...' : '生成根轨迹和时域响应'}
             </button>
           </div>
 
@@ -405,7 +415,7 @@ export default function SingleDesignPage() {
       </div>
 
       <div className="right-panel">
-        {loading ? <Loading text="正在计算参数扫描响应..." /> : null}
+        {loading ? <Loading text="正在计算根轨迹和时域响应..." /> : null}
 
         <SectionCard title="滑块动画">
           {currentFrame ? (
@@ -447,21 +457,21 @@ export default function SingleDesignPage() {
               <div className="transfer-text">{currentFrame.transferFunction}</div>
             </div>
           ) : (
-            <div className="mode-hint">生成响应后，可用滑块查看参数变化下的阶跃响应。</div>
+            <div className="mode-hint">生成后，可用滑块查看 k 变化下的根轨迹和阶跃响应。</div>
           )}
         </SectionCard>
-
-        <LineChartCard
-          title="单位阶跃响应"
-          xData={currentResponse.time}
-          yData={currentResponse.output}
-        />
 
         <RootLocusChart
           frames={result.frames}
           currentFrame={currentFrame}
           currentIndex={frameIndex}
           scanParameter={result.scanParameter}
+        />
+
+        <LineChartCard
+          title="单位阶跃响应"
+          xData={currentResponse.time}
+          yData={currentResponse.output}
         />
 
         <MetricsPanel metrics={currentMetrics} title="当前帧时域指标" />
